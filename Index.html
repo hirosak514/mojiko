@@ -2,53 +2,99 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>リアルタイム文字起こし</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI文字起こしアプリ</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="文字起こし">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="manifest" href="manifest.json">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* 認識中のテキストを少し薄く表示するスタイル */
         .interim { color: #9ca3af; }
         #status.active { color: #ef4444; font-weight: bold; }
+        body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen p-5">
+<body class="bg-slate-50 min-h-screen flex flex-col">
 
-    <div class="max-w-2xl mx-auto bg-white shadow-xl rounded-2xl p-6">
-        <h1 class="text-2xl font-bold text-gray-800 mb-4 text-center">🎤 リアルタイム文字起こし</h1>
-        
-        <div id="status" class="text-center text-sm text-gray-500 mb-4">
-            「開始」ボタンを押して話しかけてください
+    <div id="safari-alert" class="hidden fixed inset-0 z-[100] bg-slate-900/90 flex items-center justify-center p-6 text-center">
+        <div class="bg-white rounded-3xl p-8 max-w-sm shadow-2xl">
+            <div class="text-4xl mb-4">⚠️</div>
+            <h2 class="text-xl font-bold text-slate-800 mb-2">Safariで開いてください</h2>
+            <p class="text-slate-600 text-sm mb-6">iPhoneの仕様により、音声認識はSafari以外のブラウザ（Chrome等）では動作しません。</p>
+            
+            <button id="copy-url-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl mb-3 active:scale-95 transition-all">
+                URLをコピーする
+            </button>
+            <p class="text-xs text-slate-400">コピー後、Safariを起動して貼り付けてください</p>
         </div>
+    </div>
 
-        <div id="result-container" class="w-full h-80 border-2 border-gray-200 rounded-lg p-4 overflow-y-auto mb-4 bg-gray-50 text-lg leading-relaxed">
+    <div class="flex-grow max-w-2xl mx-auto w-full p-4 flex flex-col">
+        <header class="py-4 text-center">
+            <h1 class="text-2xl font-extrabold text-slate-800">🎤 Realtime Dictation</h1>
+            <div id="status" class="text-xs text-slate-500 mt-1 uppercase tracking-widest">Ready</div>
+        </header>
+        
+        <div id="result-container" class="flex-grow bg-white shadow-inner rounded-3xl p-6 overflow-y-auto mb-6 border border-slate-200 text-lg leading-relaxed text-slate-700">
             <span id="final-span"></span>
             <span id="interim-span" class="interim"></span>
         </div>
 
-        <div class="flex gap-4 justify-center">
-            <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full transition-all">
-                開始
-            </button>
-            <button id="stop-btn" class="bg-gray-400 text-white font-bold py-3 px-8 rounded-full cursor-not-allowed" disabled>
-                停止
-            </button>
-            <button id="clear-btn" class="border border-gray-300 text-gray-600 py-3 px-6 rounded-full hover:bg-gray-100 transition-all">
+        <div class="grid grid-cols-3 gap-3 pb-8">
+            <button id="clear-btn" class="bg-slate-200 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-300 active:scale-95 transition-all">
                 消去
+            </button>
+            <button id="start-btn" class="col-span-2 bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-lg">
+                録音開始
+            </button>
+            <button id="stop-btn" class="hidden col-span-2 bg-red-500 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all text-lg">
+                停止
             </button>
         </div>
     </div>
 
+    <div id="ios-guide" class="hidden fixed bottom-10 left-4 right-4 bg-slate-800 text-white p-5 rounded-2xl shadow-2xl z-50">
+        <div class="flex items-start gap-4">
+            <div class="text-2xl">📲</div>
+            <div class="flex-grow text-sm">
+                <p class="font-bold mb-1">アプリとしてインストール</p>
+                <p class="opacity-80">下の<strong>共有ボタン</strong>から<strong>「ホーム画面に追加」</strong>を選択すると全画面で使えます。</p>
+            </div>
+            <button onclick="document.getElementById('ios-guide').remove()" class="text-slate-400">✕</button>
+        </div>
+    </div>
+
     <script>
-        // Web Speech APIの呼び出し（ブラウザ互換性対応）
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        
+        const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+
+        // 【判定ロジック】iPhoneかつSafariでない場合にアラートを表示
+        if (isIos && !isSafari && !isStandalone) {
+            const alertBox = document.getElementById('safari-alert');
+            alertBox.classList.remove('hidden');
+
+            document.getElementById('copy-url-btn').onclick = () => {
+                navigator.clipboard.writeText(location.href).then(() => {
+                    document.getElementById('copy-url-btn').innerText = "コピーしました！";
+                    document.getElementById('copy-url-btn').classList.replace('bg-blue-600', 'bg-green-600');
+                });
+            };
+        }
+
         if (!SpeechRecognition) {
-            alert("お使いのブラウザは音声認識に対応していません。iPhoneの場合はSafariで開いてください。");
+            // Safari以外への警告は上記で行うため、ここはPC等の非対応ブラウザ用
+            if(!isIos) alert("音声認識非対応のブラウザです。Chrome等をお試しください。");
         } else {
             const recognition = new SpeechRecognition();
             recognition.lang = 'ja-JP';
-            recognition.interimResults = true; // 認識途中の結果も表示
-            recognition.continuous = true;   // 連続して認識
+            recognition.interimResults = true;
+            recognition.continuous = true;
 
             const startBtn = document.getElementById('start-btn');
             const stopBtn = document.getElementById('stop-btn');
@@ -59,42 +105,28 @@
 
             let finalTranscript = '';
 
-            // 認識開始
             startBtn.onclick = () => {
                 recognition.start();
-                startBtn.disabled = true;
-                startBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                stopBtn.disabled = false;
-                stopBtn.classList.replace('bg-gray-400', 'bg-red-500');
-                stopBtn.classList.add('hover:bg-red-600');
-                status.innerText = "🔴 認識中...";
-                status.classList.add('active');
+                startBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                status.innerText = "🔴 Listening...";
             };
 
-            // 認識停止
             stopBtn.onclick = () => {
                 recognition.stop();
-                resetButtons();
+                stopBtn.classList.add('hidden');
+                startBtn.classList.remove('hidden');
+                status.innerText = "Stopped";
             };
 
-            // テキスト消去
             clearBtn.onclick = () => {
-                finalTranscript = '';
-                finalSpan.innerHTML = '';
-                interimSpan.innerHTML = '';
+                if(confirm("消去しますか？")) {
+                    finalTranscript = '';
+                    finalSpan.innerHTML = '';
+                    interimSpan.innerHTML = '';
+                }
             };
 
-            function resetButtons() {
-                startBtn.disabled = false;
-                startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                stopBtn.disabled = true;
-                stopBtn.classList.replace('bg-red-500', 'bg-gray-400');
-                stopBtn.classList.remove('hover:bg-red-600');
-                status.innerText = "停止中";
-                status.classList.remove('active');
-            }
-
-            // 音声認識の処理
             recognition.onresult = (event) => {
                 let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -107,22 +139,13 @@
                 }
                 finalSpan.innerHTML = finalTranscript;
                 interimSpan.innerHTML = interimTranscript;
-
-                // 常に最新のテキストが見えるように下へスクロール
-                const container = document.getElementById('result-container');
-                container.scrollTop = container.scrollHeight;
+                document.getElementById('result-container').scrollTop = document.getElementById('result-container').scrollHeight;
             };
 
-            recognition.onerror = (event) => {
-                console.error("Speech recognition error:", event.error);
-                status.innerText = "エラーが発生しました: " + event.error;
-                resetButtons();
-            };
-
-            recognition.onend = () => {
-                // 自動停止してもボタンの状態を戻す
-                if (!startBtn.disabled) resetButtons();
-            };
+            // PWAガイド表示
+            if (isIos && isSafari && !isStandalone) {
+                document.getElementById('ios-guide').classList.remove('hidden');
+            }
         }
     </script>
 </body>
