@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム文字起こし</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 認識中のテキストを少し薄く表示するスタイル */
+        .interim { color: #9ca3af; }
+        #status.active { color: #ef4444; font-weight: bold; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-5">
+
+    <div class="max-w-2xl mx-auto bg-white shadow-xl rounded-2xl p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4 text-center">🎤 リアルタイム文字起こし</h1>
+        
+        <div id="status" class="text-center text-sm text-gray-500 mb-4">
+            「開始」ボタンを押して話しかけてください
+        </div>
+
+        <div id="result-container" class="w-full h-80 border-2 border-gray-200 rounded-lg p-4 overflow-y-auto mb-4 bg-gray-50 text-lg leading-relaxed">
+            <span id="final-span"></span>
+            <span id="interim-span" class="interim"></span>
+        </div>
+
+        <div class="flex gap-4 justify-center">
+            <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full transition-all">
+                開始
+            </button>
+            <button id="stop-btn" class="bg-gray-400 text-white font-bold py-3 px-8 rounded-full cursor-not-allowed" disabled>
+                停止
+            </button>
+            <button id="clear-btn" class="border border-gray-300 text-gray-600 py-3 px-6 rounded-full hover:bg-gray-100 transition-all">
+                消去
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Web Speech APIの呼び出し（ブラウザ互換性対応）
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        if (!SpeechRecognition) {
+            alert("お使いのブラウザは音声認識に対応していません。iPhoneの場合はSafariで開いてください。");
+        } else {
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'ja-JP';
+            recognition.interimResults = true; // 認識途中の結果も表示
+            recognition.continuous = true;   // 連続して認識
+
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            const clearBtn = document.getElementById('clear-btn');
+            const finalSpan = document.getElementById('final-span');
+            const interimSpan = document.getElementById('interim-span');
+            const status = document.getElementById('status');
+
+            let finalTranscript = '';
+
+            // 認識開始
+            startBtn.onclick = () => {
+                recognition.start();
+                startBtn.disabled = true;
+                startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                stopBtn.disabled = false;
+                stopBtn.classList.replace('bg-gray-400', 'bg-red-500');
+                stopBtn.classList.add('hover:bg-red-600');
+                status.innerText = "🔴 認識中...";
+                status.classList.add('active');
+            };
+
+            // 認識停止
+            stopBtn.onclick = () => {
+                recognition.stop();
+                resetButtons();
+            };
+
+            // テキスト消去
+            clearBtn.onclick = () => {
+                finalTranscript = '';
+                finalSpan.innerHTML = '';
+                interimSpan.innerHTML = '';
+            };
+
+            function resetButtons() {
+                startBtn.disabled = false;
+                startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                stopBtn.disabled = true;
+                stopBtn.classList.replace('bg-red-500', 'bg-gray-400');
+                stopBtn.classList.remove('hover:bg-red-600');
+                status.innerText = "停止中";
+                status.classList.remove('active');
+            }
+
+            // 音声認識の処理
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript + '。' + '<br>';
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                finalSpan.innerHTML = finalTranscript;
+                interimSpan.innerHTML = interimTranscript;
+
+                // 常に最新のテキストが見えるように下へスクロール
+                const container = document.getElementById('result-container');
+                container.scrollTop = container.scrollHeight;
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Speech recognition error:", event.error);
+                status.innerText = "エラーが発生しました: " + event.error;
+                resetButtons();
+            };
+
+            recognition.onend = () => {
+                // 自動停止してもボタンの状態を戻す
+                if (!startBtn.disabled) resetButtons();
+            };
+        }
+    </script>
+</body>
+</html>
